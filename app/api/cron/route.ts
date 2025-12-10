@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// Define the shape of the data from the Graph
 interface SwapData {
   id: string;
   timestamp: string;
@@ -30,7 +29,6 @@ export async function GET() {
     const supabase = createClient(dbUrl, dbKey, { auth: { persistSession: false } });
     const PAIR = "0xeAd0d2751d20c83d6EE36f6004f2aA17637809Cf".toLowerCase();
 
-    // 1. Get Last Timestamp
     const { data: latest } = await supabase
       .from('swaps')
       .select('timestamp')
@@ -41,7 +39,6 @@ export async function GET() {
 
     const lastTs = latest?.timestamp || 0;
 
-    // 2. Fetch Data
     const query = `
       {
         swaps(
@@ -69,7 +66,6 @@ export async function GET() {
 
     if (swaps.length === 0) return NextResponse.json({ message: 'No new swaps' });
 
-    // 3. Save Data
     const rows = swaps.map((s) => {
       const a0i = parseFloat(s.amount0In);
       const a1o = parseFloat(s.amount1Out);
