@@ -1,17 +1,26 @@
-// @ts-ignore
 import { createClient } from '@supabase/supabase-js';
-// @ts-ignore
 import { NextResponse } from 'next/server';
 
-// @ts-ignore
 export const dynamic = 'force-dynamic';
+
+// Define the shape of the data from the Graph
+interface SwapData {
+  id: string;
+  timestamp: string;
+  sender: string;
+  to: string;
+  amount0In: string;
+  amount0Out: string;
+  amount1In: string;
+  amount1Out: string;
+  amountUSD: string;
+  token0: { symbol: string };
+  token1: { symbol: string };
+}
 
 export async function GET() {
   try {
-    // 1. Setup Database Connection
-    // @ts-ignore
     const dbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.POSTGRES_URL || process.env.STORAGE_URL;
-    // @ts-ignore
     const dbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!dbUrl || !dbKey) {
@@ -21,7 +30,7 @@ export async function GET() {
     const supabase = createClient(dbUrl, dbKey, { auth: { persistSession: false } });
     const PAIR = "0xeAd0d2751d20c83d6EE36f6004f2aA17637809Cf".toLowerCase();
 
-    // 2. Get the Last Timestamp
+    // 1. Get Last Timestamp
     const { data: latest } = await supabase
       .from('swaps')
       .select('timestamp')
@@ -32,7 +41,7 @@ export async function GET() {
 
     const lastTs = latest?.timestamp || 0;
 
-    // 3. Fetch New Data
+    // 2. Fetch Data
     const query = `
       {
         swaps(
@@ -56,29 +65,32 @@ export async function GET() {
     });
 
     const j = await res.json();
-    // @ts-ignore
-    const swaps = j.data?.swaps || [];
+    const swaps: SwapData[] = j.data?.swaps || [];
 
     if (swaps.length === 0) return NextResponse.json({ message: 'No new swaps' });
 
-    // 4. Save to Database
-    // @ts-ignore
-    const rows = swaps.map((s) => ({
-      id: s.id,
-      timestamp: Number(s.timestamp),
-      sender: s.sender,
-      to_address: s.to,
-      amount0_in: s.amount0In,
-      amount0_out: s.amount0Out,
-      amount1_in: s.amount1In,
-      amount1_out: s.amount1Out,
-      amount_usd: s.amountUSD,
-      token0_symbol: s.token0.symbol,
-      token1_symbol: s.token1.symbol,
-      // @ts-ignore
-      type: (parseFloat(s.amount0In) > 0 && parseFloat(s.amount1Out) > 0) ? "BUY" : "SELL",
-      pair: PAIR
-    }));
+    // 3. Save Data
+    const rows = swaps.map((s) => {
+      const a0i = parseFloat(s.amount0In);
+      const a1o = parseFloat(s.amount1Out);
+      const type = (a0i > 0 && a1o > 0) ? "BUY" : "SELL";
+
+      return {
+        id: s.id,
+        timestamp: Number(s.timestamp),
+        sender: s.sender,
+        to_address: s.to,
+        amount0_in: s.amount0In,
+        amount0_out: s.amount0Out,
+        amount1_in: s.amount1In,
+        amount1_out: s.amount1Out,
+        amount_usd: s.amountUSD,
+        token0_symbol: s.token0.symbol,
+        token1_symbol: s.token1.symbol,
+        type: type,
+        pair: PAIR
+      };
+    });
 
     const { error } = await supabase.from('swaps').upsert(rows, { onConflict: 'id' });
 
