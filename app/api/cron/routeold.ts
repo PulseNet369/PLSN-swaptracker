@@ -1,19 +1,12 @@
-// Last Updated: Added Security (CRON_SECRET)
+// Last Updated: Fixed Timezone Issue (Starts June 10, 00:00 UTC)
 import { createClient } from '@supabase/supabase-js';
-import { NextRequest, NextResponse } from 'next/server'; // Added NextRequest
+import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) { // Changed to accept request
+export async function GET() {
   try {
-    // 1. SECURITY CHECK
-    // The cron job must send this password, or we block them.
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // 2. SETUP KEYS
+    // 1. SETUP
     const urlCheck = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const keyCheck = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -23,8 +16,9 @@ export async function GET(request: NextRequest) { // Changed to accept request
 
     const supabase = createClient(urlCheck, keyCheck, { auth: { persistSession: false } });
     const PAIR = "0xeAd0d2751d20c83d6EE36f6004f2aA17637809Cf".toLowerCase();
-    
-    // Start from June 10, 2024 at 00:00:00 UTC
+
+    // 2. CONFIGURATION
+    // Start from June 10, 2024 at 00:00:00 UTC (Catches everything that day)
     const START_TIMESTAMP = 1717977600; 
 
     // 3. GET LAST SYNC TIMESTAMP
@@ -35,6 +29,7 @@ export async function GET(request: NextRequest) { // Changed to accept request
       .limit(1)
       .single();
 
+    // If table is empty, use the new safe Start Time.
     const lastTs = latest?.timestamp || START_TIMESTAMP;
 
     // 4. FETCH DATA
@@ -46,9 +41,16 @@ export async function GET(request: NextRequest) { // Changed to accept request
           orderDirection: asc
           where: { pair: "${PAIR}", timestamp_gt: ${lastTs} }
         ) {
-          id transaction { id } timestamp sender to amountUSD 
-          amount0In amount0Out amount1In amount1Out
-          token0 { symbol } token1 { symbol }
+          id 
+          transaction { id } 
+          timestamp 
+          sender 
+          to 
+          amountUSD 
+          amount0In amount0Out 
+          amount1In amount1Out
+          token0 { symbol }
+          token1 { symbol }
         }
       }
     `;
@@ -82,7 +84,9 @@ export async function GET(request: NextRequest) { // Changed to accept request
       type: (parseFloat(s.amount0In) > 0 && parseFloat(s.amount1Out) > 0) ? "BUY" : "SELL"
     }));
 
-    const { error } = await supabase.from('swaps').upsert(rows, { onConflict: 'swap_id' });
+    const { error } = await supabase
+      .from('swaps')
+      .upsert(rows, { onConflict: 'swap_id' });
 
     if (error) throw error;
 
