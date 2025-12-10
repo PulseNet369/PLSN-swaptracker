@@ -1,4 +1,4 @@
-// Last Updated: Fixed Start Time, Incremental IDs, Removed Pair
+// Last Updated: Fixed Timezone Issue (Starts June 10, 00:00 UTC)
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // 1. SETUP & KEYS
+    // 1. SETUP
     const urlCheck = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     const keyCheck = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -16,13 +16,12 @@ export async function GET() {
 
     const supabase = createClient(urlCheck, keyCheck, { auth: { persistSession: false } });
     const PAIR = "0xeAd0d2751d20c83d6EE36f6004f2aA17637809Cf".toLowerCase();
-    
-    // ** CONFIGURATION **
-    // If DB is empty, start from June 10, 2024 13:30:00 UTC (1718026200)
-    // This prevents fetching empty data from years ago.
-    const START_TIMESTAMP = 1718026200; 
 
-    // 2. GET LAST SYNC TIMESTAMP
+    // 2. CONFIGURATION
+    // Start from June 10, 2024 at 00:00:00 UTC (Catches everything that day)
+    const START_TIMESTAMP = 1717977600; 
+
+    // 3. GET LAST SYNC TIMESTAMP
     const { data: latest } = await supabase
       .from('swaps')
       .select('timestamp')
@@ -30,14 +29,14 @@ export async function GET() {
       .limit(1)
       .single();
 
-    // If we have data, use that timestamp. If empty, use our hardcoded Start Date.
+    // If table is empty, use the new safe Start Time.
     const lastTs = latest?.timestamp || START_TIMESTAMP;
 
-    // 3. FETCH DATA (Includes Transaction Hash)
+    // 4. FETCH DATA
     const query = `
       {
         swaps(
-          first: 50
+          first: 100
           orderBy: timestamp
           orderDirection: asc
           where: { pair: "${PAIR}", timestamp_gt: ${lastTs} }
@@ -68,11 +67,10 @@ export async function GET() {
 
     if (swaps.length === 0) return NextResponse.json({ message: 'No new swaps found.' });
 
-    // 4. MAP DATA
+    // 5. MAP & SAVE
     const rows = swaps.map((s: any) => ({
-      // We do NOT send 'id'. We let Supabase generate 1, 2, 3...
-      swap_id: s.id,                // Used for checking duplicates
-      tx_hash: s.transaction.id,    // The Transaction Hash
+      swap_id: s.id,                
+      tx_hash: s.transaction.id,    
       timestamp: Number(s.timestamp),
       sender: s.sender,
       to_address: s.to,
@@ -86,9 +84,6 @@ export async function GET() {
       type: (parseFloat(s.amount0In) > 0 && parseFloat(s.amount1Out) > 0) ? "BUY" : "SELL"
     }));
 
-    // 5. UPSERT
-    // We match on 'swap_id' (the Graph ID) to stop duplicates.
-    // We ignore the table's main 'id' so it stays incremental.
     const { error } = await supabase
       .from('swaps')
       .upsert(rows, { onConflict: 'swap_id' });
