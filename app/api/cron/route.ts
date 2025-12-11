@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     const query = `
       {
         swaps(
-          first: 100
+          first: 500
           orderBy: timestamp
           orderDirection: asc
           where: { pair: "${PAIR}", timestamp_gte: ${lastTs} }
