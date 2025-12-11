@@ -1,9 +1,10 @@
+// Last Updated: Added Security (CRON_SECRET)
 import { createClient } from '@supabase/supabase-js';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'; // Added NextRequest
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) { // Changed to accept request
   try {
     // 1. SECURITY CHECK
     // The cron job must send this password, or we block them.
@@ -37,14 +38,13 @@ export async function GET(request: NextRequest) {
     const lastTs = latest?.timestamp || START_TIMESTAMP;
 
     // 4. FETCH DATA
-    // FIX APPLIED: Changed to 'timestamp_gte' to catch overlapping swaps in the same second
     const query = `
       {
         swaps(
-          first: 100
+          first: 500
           orderBy: timestamp
           orderDirection: asc
-          where: { pair: "${PAIR}", timestamp_gte: ${lastTs} }
+          where: { pair: "${PAIR}", timestamp_gt: ${lastTs} }
         ) {
           id transaction { id } timestamp sender to amountUSD 
           amount0In amount0Out amount1In amount1Out
@@ -82,7 +82,6 @@ export async function GET(request: NextRequest) {
       type: (parseFloat(s.amount0In) > 0 && parseFloat(s.amount1Out) > 0) ? "BUY" : "SELL"
     }));
 
-    // The 'upsert' with 'onConflict: swap_id' automatically handles the duplicates
     const { error } = await supabase.from('swaps').upsert(rows, { onConflict: 'swap_id' });
 
     if (error) throw error;
