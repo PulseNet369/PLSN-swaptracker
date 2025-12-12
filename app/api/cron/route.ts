@@ -1,4 +1,3 @@
-// Last Updated: Added 'from_address' (Transaction Origin)
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest) {
     const lastTs = latest?.timestamp || START_TIMESTAMP;
 
     // 4. FETCH DATA
-    // ADDED: 'transaction { id from }' to get the wallet address
+    // FIX: Moved 'from' to the top level, based on your Graph Builder example
     const query = `
       {
         swaps(
@@ -47,14 +46,16 @@ export async function GET(request: NextRequest) {
           where: { pair: "${PAIR}", timestamp_gte: ${lastTs} }
         ) {
           id 
-          transaction { id from } 
-          timestamp 
+          from       
           sender 
           to 
+          timestamp 
           amountUSD 
           amount0In amount0Out 
           amount1In amount1Out
-          token0 { symbol } token1 { symbol }
+          token0 { symbol } 
+          token1 { symbol }
+          transaction { id }
         }
       }
     `;
@@ -75,9 +76,9 @@ export async function GET(request: NextRequest) {
     const rows = swaps.map((s: any) => ({
       swap_id: s.id,                
       tx_hash: s.transaction.id,
-      from_address: s.transaction.from, // <--- NEW: The real user wallet
+      from_address: s.from,         // <--- CORRECTED: Using top-level 'from'
       timestamp: Number(s.timestamp),
-      sender: s.sender,                 // (Usually the Router Contract)
+      sender: s.sender,
       to_address: s.to,
       amount0_in: s.amount0In,
       amount0_out: s.amount0Out,
