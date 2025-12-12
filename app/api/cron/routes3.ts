@@ -1,4 +1,3 @@
-// Last Updated: Added 'from_address' (Transaction Origin)
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -7,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     // 1. SECURITY CHECK
+    // The cron job must send this password, or we block them.
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const lastTs = latest?.timestamp || START_TIMESTAMP;
 
     // 4. FETCH DATA
-    // ADDED: 'transaction { id from }' to get the wallet address
+    // FIX APPLIED: Changed to 'timestamp_gte' to catch overlapping swaps in the same second
     const query = `
       {
         swaps(
@@ -46,14 +46,8 @@ export async function GET(request: NextRequest) {
           orderDirection: asc
           where: { pair: "${PAIR}", timestamp_gte: ${lastTs} }
         ) {
-          id 
-          transaction { id from } 
-          timestamp 
-          sender 
-          to 
-          amountUSD 
-          amount0In amount0Out 
-          amount1In amount1Out
+          id transaction { id } timestamp sender to amountUSD 
+          amount0In amount0Out amount1In amount1Out
           token0 { symbol } token1 { symbol }
         }
       }
@@ -74,10 +68,9 @@ export async function GET(request: NextRequest) {
     // 5. MAP & SAVE
     const rows = swaps.map((s: any) => ({
       swap_id: s.id,                
-      tx_hash: s.transaction.id,
-      from_address: s.transaction.from, // <--- NEW: The real user wallet
+      tx_hash: s.transaction.id,    
       timestamp: Number(s.timestamp),
-      sender: s.sender,                 // (Usually the Router Contract)
+      sender: s.sender,
       to_address: s.to,
       amount0_in: s.amount0In,
       amount0_out: s.amount0Out,
@@ -89,6 +82,7 @@ export async function GET(request: NextRequest) {
       type: (parseFloat(s.amount0In) > 0 && parseFloat(s.amount1Out) > 0) ? "BUY" : "SELL"
     }));
 
+    // The 'upsert' with 'onConflict: swap_id' automatically handles the duplicates
     const { error } = await supabase.from('swaps').upsert(rows, { onConflict: 'swap_id' });
 
     if (error) throw error;
